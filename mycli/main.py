@@ -272,9 +272,12 @@ class MyCli(object):
                 err=True, fg='red')
             return
 
+        #  formatter = logging.Formatter(
+            #  '%(asctime)s (%(process)d/%(threadName)s) '
+            #  '%(name)s %(levelname)s - %(message)s')
         formatter = logging.Formatter(
-            '%(asctime)s (%(process)d/%(threadName)s) '
-            '%(name)s %(levelname)s - %(message)s')
+            '%(asctime)s %(levelname)s - %(message)s (%(module)s:%(lineno)d)'
+            '[%(process)d-%(threadName)s] <%(name)s>')
 
         handler.setFormatter(formatter)
 
