@@ -1,0 +1,2 @@
+cashbustest.mysql.rds.aliyuncs.com,cashbus
+cashbustest.mysql.rds.aliyuncs.com,cashbus_meta

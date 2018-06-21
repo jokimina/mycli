@@ -94,11 +94,13 @@ class MyCli(object):
     def __init__(self, sqlexecute=None, prompt=None,
             logfile=None, defaults_suffix=None, defaults_file=None,
             login_path=None, auto_vertical_output=False, warn=None,
-            myclirc="~/.myclirc"):
+            myclirc="~/.myclirc", multi_mode=False):
         self.sqlexecute = sqlexecute
+        self.addition_sqlexecute_list = []
         self.logfile = logfile
         self.defaults_suffix = defaults_suffix
         self.login_path = login_path
+        self.multi_mode = multi_mode
 
         # self.cnf_files is a class variable that stores the list of mysql
         # config files to read in at launch.
@@ -213,8 +215,12 @@ class MyCli(object):
     def change_db(self, arg, **_):
         if arg is None:
             self.sqlexecute.connect()
+            for _sql_exec in self.addition_sqlexecute_list:
+                _sql_exec.connect()
         else:
             self.sqlexecute.connect(database=arg)
+            for _sql_exec in self.addition_sqlexecute_list:
+                _sql_exec.connect(database=arg)
 
         yield (None, None, None, 'You are now connected to database "%s" as '
                 'user "%s"' % (self.sqlexecute.dbname, self.sqlexecute.user))
@@ -345,7 +351,7 @@ class MyCli(object):
         return merged
 
     def connect(self, database='', user='', passwd='', host='', port='',
-            socket='', charset='', local_infile='', ssl=''):
+            socket='', charset='', local_infile='', ssl='', multi_config_list=None):
 
         cnf = {'database': None,
                'user': None,
@@ -400,6 +406,13 @@ class MyCli(object):
             try:
                 self.sqlexecute = SQLExecute(database, user, passwd, host, port,
                                              socket, charset, local_infile, ssl)
+                for _multi_config in multi_config_list:
+                    _host, _database = _multi_config
+                    self.logger.debug("multi_mode _connect host: %s, database: %s" % (_host, _database))
+                    self.addition_sqlexecute_list.append(
+                        SQLExecute(_database, user, passwd, _host, port,
+                                             socket, charset, local_infile, ssl)
+                    )
             except OperationalError as e:
                 if ('Access denied for user' in e.args[1]):
                     new_passwd = click.prompt('Password', hide_input=True,
@@ -516,6 +529,8 @@ class MyCli(object):
             print('Mail: https://groups.google.com/forum/#!forum/mycli-users')
             print('Home: http://mycli.net')
             print('Thanks to the contributor -', thanks_picker([author_file, sponsor_file]))
+            if self.multi_mode:
+                print('-- Running with Multiple rds mode!!')
 
         def prompt_tokens(cli):
             prompt = self.get_prompt(self.prompt_format)
@@ -574,47 +589,63 @@ class MyCli(object):
                 successful = False
                 start = time()
                 res = sqlexecute.run(document.text)
+                logger.debug("addition_sqlexecute_list : %s" % self.addition_sqlexecute_list)
+                addition_result_list = [
+                    (_sqlexecute, _sqlexecute.run(document.text)) for _sqlexecute in self.addition_sqlexecute_list  
+                ]
                 self.formatter.query = document.text
                 successful = True
                 result_count = 0
-                for title, cur, headers, status in res:
-                    logger.debug("headers: %r", headers)
-                    logger.debug("rows: %r", cur)
-                    logger.debug("status: %r", status)
-                    threshold = 1000
-                    if (is_select(status) and
-                            cur and cur.rowcount > threshold):
-                        self.echo('The result set has more than {} rows.'.format(
-                            threshold), fg='red')
-                        if not confirm('Do you want to continue?'):
-                            self.echo("Aborted!", err=True, fg='red')
-                            break
 
-                    if self.auto_vertical_output:
-                        max_width = self.cli.output.get_size().columns
-                    else:
-                        max_width = None
+                def _output(res):
+                    for title, cur, headers, status in res:
+                        logger.debug("id: %d", id(cur))
+                        logger.debug("headers: %r", headers)
+                        logger.debug("rows: %r", cur)
+                        logger.debug("status: %r", status)
+                        threshold = 1000
+                        if (is_select(status) and
+                                cur and cur.rowcount > threshold):
+                            self.echo('The result set has more than {} rows.'.format(
+                                threshold), fg='red')
+                            if not confirm('Do you want to continue?'):
+                                self.echo("Aborted!", err=True, fg='red')
+                                break
 
-                    formatted = self.format_output(
-                        title, cur, headers, special.is_expanded_output(),
-                        max_width)
+                        if self.auto_vertical_output:
+                            max_width = self.cli.output.get_size().columns
+                        else:
+                            max_width = None
 
-                    t = time() - start
-                    try:
-                        if result_count > 0:
-                            self.echo('')
+                        formatted = self.format_output(
+                            title, cur, headers, special.is_expanded_output(),
+                            max_width)
+
+                        #  t = time() - start
                         try:
-                            self.output(formatted, status)
+                            if result_count > 0:
+                                self.echo('')
+                            try:
+                                self.output(formatted, status)
+                            except KeyboardInterrupt:
+                                pass
+                            #  if special.is_timing_enabled():
+                                #  self.echo('Time: %0.03fs' % t)
                         except KeyboardInterrupt:
                             pass
-                        if special.is_timing_enabled():
-                            self.echo('Time: %0.03fs' % t)
-                    except KeyboardInterrupt:
-                        pass
 
-                    start = time()
-                    result_count += 1
-                    mutating = mutating or is_mutating(status)
+                        #  start = time()
+                        #  result_count += 1
+                        #  mutating = mutating or is_mutating(status)
+                self.echo(
+                    "from --- %s --> %s" % (self.sqlexecute.host, self.sqlexecute.dbname))
+                _output(res)
+                logger.debug("addition_result_list : %s" % addition_result_list)
+                for _l in addition_result_list:
+                    _sql_exec, _res = _l
+                    self.echo(
+                        "from --- %s --> %s" % (_sql_exec.host, _sql_exec.dbname))
+                    _output(_res)
                 special.unset_once_if_written()
             except EOFError as e:
                 raise e
@@ -1000,13 +1031,25 @@ class MyCli(object):
               help='Read this path from the login file.')
 @click.option('-e', '--execute',  type=str,
               help='Execute command and quit.')
+@click.option('-m', '--multi-mode', is_flag=True,
+              help='execute sql on multiple rds. use with -i/--multi-index-file')
+@click.option('-i', '--multi-index-file',  type=str,
+              help='''index config file on multi-model. 
+            format: connect_url,db_name
+
+            e.g:
+            $ head sample.txt \n
+               cashbustest.mysql.rds.aliyuncs.com,cashbus\n
+               cashbustest.mysql.rds.aliyuncs.com,cashbusmeta
+
+              ''')
 @click.argument('database', default='', nargs=1)
 def cli(database, user, host, port, socket, password, dbname,
         version, verbose, prompt, logfile, defaults_group_suffix,
         defaults_file, login_path, auto_vertical_output, local_infile,
         ssl_ca, ssl_capath, ssl_cert, ssl_key, ssl_cipher,
         ssl_verify_server_cert, table, csv, warn, execute, myclirc, dsn,
-        list_dsn):
+        list_dsn, multi_mode, multi_index_file):
     """A MySQL terminal client with auto-completion and syntax highlighting.
 
     \b
@@ -1021,11 +1064,20 @@ def cli(database, user, host, port, socket, password, dbname,
         print('Version:', __version__)
         sys.exit(0)
 
+    multi_config_list = []
+    if multi_mode:
+        if not multi_index_file:
+            click.secho('need --multi-index-file on multi_mode',
+                 err=True, fg='red')
+            exit(1)
+        with open(multi_index_file, 'r') as f:
+            multi_config_list = [ l.strip().split(',') for l in f.readlines()]
+
     mycli = MyCli(prompt=prompt, logfile=logfile,
                   defaults_suffix=defaults_group_suffix,
                   defaults_file=defaults_file, login_path=login_path,
                   auto_vertical_output=auto_vertical_output, warn=warn,
-                  myclirc=myclirc)
+                  myclirc=myclirc, multi_mode=multi_mode)
     if list_dsn:
         try:
             alias_dsn = mycli.config['alias_dsn']
@@ -1068,8 +1120,11 @@ def cli(database, user, host, port, socket, password, dbname,
     if database and '://' in database:
         mycli.connect_uri(database, local_infile, ssl)
     else:
+        if multi_mode:
+            host, database = multi_config_list.pop(0)
+
         mycli.connect(database, user, password, host, port, socket,
-                      local_infile=local_infile, ssl=ssl)
+                      local_infile=local_infile, ssl=ssl, multi_config_list=multi_config_list)
 
     mycli.logger.debug('Launch Params: \n'
             '\tdatabase: %r'
