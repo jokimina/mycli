@@ -408,7 +408,6 @@ class MyCli(object):
                                              socket, charset, local_infile, ssl)
                 for _multi_config in multi_config_list:
                     _host, _database = _multi_config
-                    self.logger.debug("multi_mode _connect host: %s, database: %s" % (_host, _database))
                     self.addition_sqlexecute_list.append(
                         SQLExecute(_database, user, passwd, _host, port,
                                              socket, charset, local_infile, ssl)
@@ -1041,7 +1040,7 @@ class MyCli(object):
             $ head sample.txt \n
                cashbustest.mysql.rds.aliyuncs.com,cashbus\n
                cashbustest.mysql.rds.aliyuncs.com,cashbusmeta \n
-            $ mycli -h cashbustest.mysql.rds.aliyuncs.com -u cashbusdb  -m -i sample.txt
+            $ mycli -u cashbusdb  -m -i sample.txt
 
               ''')
 @click.argument('database', default='', nargs=1)
@@ -1065,6 +1064,10 @@ def cli(database, user, host, port, socket, password, dbname,
         print('Version:', __version__)
         sys.exit(0)
 
+    if not password:
+        import getpass
+        password = getpass.getpass('Password:')
+    
     multi_config_list = []
     if multi_mode:
         if not multi_index_file:
