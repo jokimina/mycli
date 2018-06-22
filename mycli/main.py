@@ -1040,7 +1040,8 @@ class MyCli(object):
             e.g:
             $ head sample.txt \n
                cashbustest.mysql.rds.aliyuncs.com,cashbus\n
-               cashbustest.mysql.rds.aliyuncs.com,cashbusmeta
+               cashbustest.mysql.rds.aliyuncs.com,cashbusmeta \n
+            $ mycli -h cashbustest.mysql.rds.aliyuncs.com -u cashbusdb  -m -i sample.txt
 
               ''')
 @click.argument('database', default='', nargs=1)
