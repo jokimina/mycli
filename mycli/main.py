@@ -413,7 +413,7 @@ class MyCli(object):
                                              socket, charset, local_infile, ssl)
                     )
             except OperationalError as e:
-                if ('Access denied for user' in e.args[1]):
+                if ('Access denied for user' in e.args[1]) and not multi_config_list:
                     new_passwd = click.prompt('Password', hide_input=True,
                                               show_default=False, type=str, err=True)
                     self.sqlexecute = SQLExecute(database, user, new_passwd, host, port,
